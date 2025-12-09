@@ -24,20 +24,7 @@ $STD apt-get install -y \
   jq
 msg_ok "Installed Dependencies"
 
-msg_info "Installing Docker"
-DOCKER_CONFIG_PATH='/etc/docker/daemon.json'
-mkdir -p "$(dirname $DOCKER_CONFIG_PATH)"
-echo -e '{\n  "log-driver": "journald"\n}' >/etc/docker/daemon.json
-$STD sh <(curl -fsSL https://get.docker.com)
-msg_ok "Installed Docker"
-
-msg_info "Installing Docker Compose"
-DOCKER_COMPOSE_VERSION=$(curl -fsSL https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-mkdir -p /usr/local/lib/docker/cli-plugins
-curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-msg_ok "Installed Docker Compose"
+setup_docker
 
 msg_info "Downloading Harbor"
 RELEASE=$(curl -fsSL https://api.github.com/repos/goharbor/harbor/releases/latest | jq -r '.tag_name')
@@ -61,6 +48,55 @@ msg_ok "Configured Harbor"
 msg_info "Installing Harbor with Trivy (this may take a while)"
 $STD ./install.sh --with-trivy
 msg_ok "Installed Harbor with Trivy"
+
+msg_info "Creating Health Check Service"
+mkdir -p /opt/custom_healthcheck
+cat <<'EOF' >/opt/custom_healthcheck/harbor-healthcheck.sh
+#!/bin/bash
+# Harbor Health Check Script
+# Ensures all Harbor containers are running after system boot
+
+MAX_RETRIES=30
+RETRY_INTERVAL=10
+
+cd /opt/harbor
+
+for i in $(seq 1 $MAX_RETRIES); do
+    NOT_RUNNING=$(docker compose ps --format json | jq -r 'select(.State != "running")' | wc -l)
+
+    if [[ "$NOT_RUNNING" -eq 0 ]]; then
+        echo "All Harbor containers are running"
+        exit 0
+    fi
+
+    echo "Waiting for containers... (attempt $i/$MAX_RETRIES)"
+    docker compose up -d
+    sleep $RETRY_INTERVAL
+done
+
+echo "Harbor failed to start all containers"
+exit 1
+EOF
+chmod +x /opt/custom_healthcheck/harbor-healthcheck.sh
+
+cat <<EOF >/etc/systemd/system/harbor-healthcheck.service
+[Unit]
+Description=Harbor Health Check
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/custom_healthcheck/harbor-healthcheck.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable -q harbor-healthcheck
+msg_ok "Created Health Check Service"
 
 echo "${RELEASE#v}" >~/.harbor
 
