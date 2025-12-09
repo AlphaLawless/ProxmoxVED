@@ -36,6 +36,10 @@
             "type": "info"
         },
         {
+            "text": "Trivy vulnerability scanner is included for automatic container image security scanning.",
+            "type": "info"
+        },
+        {
             "text": "For production use, configure HTTPS by editing /opt/harbor/harbor.yml",
             "type": "warning"
         }

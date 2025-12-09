@@ -58,9 +58,9 @@ sed -i "s|^  certificate:|#  certificate:|g" harbor.yml
 sed -i "s|^  private_key:|#  private_key:|g" harbor.yml
 msg_ok "Configured Harbor"
 
-msg_info "Installing Harbor (this may take a while)"
-$STD ./install.sh
-msg_ok "Installed Harbor"
+msg_info "Installing Harbor with Trivy (this may take a while)"
+$STD ./install.sh --with-trivy
+msg_ok "Installed Harbor with Trivy"
 
 echo "${RELEASE#v}" >~/.harbor
 
