@@ -52,16 +52,14 @@ NODE_VERSION="22" NODE_MODULE="serve" setup_nodejs
 setup_mariadb
 MARIADB_DB_NAME="romm" MARIADB_DB_USER="romm" setup_mariadb_db
 
-msg_info "Creating romm user and directories"
-id -u romm &>/dev/null || useradd -r -m -d /var/lib/romm -s /bin/bash romm
+msg_info "Creating directories"
 mkdir -p /opt/romm \
     /var/lib/romm/config \
     /var/lib/romm/resources \
     /var/lib/romm/assets/{saves,states,screenshots} \
     /var/lib/romm/library/roms \
     /var/lib/romm/library/bios
-chown -R romm:romm /opt/romm /var/lib/romm
-msg_ok "Created romm user and directories"
+msg_ok "Created directories"
 
 msg_info "Building RAHasher (RetroAchievements)"
 RAHASHER_VERSION="1.8.1"
@@ -116,7 +114,6 @@ SCHEDULED_UPDATE_SWITCH_TITLEDB_CRON=0 4 * * *
 LOGLEVEL=INFO
 EOF
 
-chown romm:romm /opt/romm/.env
 chmod 600 /opt/romm/.env
 msg_ok "Created environment file"
 
@@ -129,7 +126,6 @@ export UV_CONCURRENT_DOWNLOADS=1
 $STD uv sync --all-extras
 cd /opt/romm/backend
 $STD uv run alembic upgrade head
-chown -R romm:romm /opt/romm
 msg_ok "Installed backend"
 
 msg_info "Installing frontend"
@@ -139,7 +135,6 @@ $STD npm run build
 mkdir -p /opt/romm/frontend/assets/romm
 ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
 ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
-chown -R romm:romm /opt/romm
 msg_ok "Installed frontend"
 
 msg_info "Creating services"
@@ -151,8 +146,6 @@ Requires=mariadb.service redis-server.service
 
 [Service]
 Type=simple
-User=romm
-Group=romm
 WorkingDirectory=/opt/romm/backend
 EnvironmentFile=/opt/romm/.env
 Environment="PYTHONPATH=/opt/romm"
@@ -171,8 +164,6 @@ After=network.target romm-backend.service
 
 [Service]
 Type=simple
-User=romm
-Group=romm
 WorkingDirectory=/opt/romm/frontend
 ExecStart=$(which serve) -s dist -l 8080
 Restart=on-failure
@@ -190,8 +181,6 @@ Requires=mariadb.service redis-server.service
 
 [Service]
 Type=simple
-User=romm
-Group=romm
 WorkingDirectory=/opt/romm/backend
 EnvironmentFile=/opt/romm/.env
 Environment="PYTHONPATH=/opt/romm/backend"
@@ -211,8 +200,6 @@ Requires=mariadb.service redis-server.service
 
 [Service]
 Type=simple
-User=romm
-Group=romm
 WorkingDirectory=/opt/romm/backend
 EnvironmentFile=/opt/romm/.env
 Environment="PYTHONPATH=/opt/romm/backend"
@@ -234,8 +221,6 @@ Requires=romm-backend.service
 
 [Service]
 Type=simple
-User=romm
-Group=romm
 WorkingDirectory=/opt/romm/backend
 EnvironmentFile=/opt/romm/.env
 Environment="PYTHONPATH=/opt/romm/backend"
