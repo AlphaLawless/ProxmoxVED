@@ -47,7 +47,6 @@ $STD apt-get install -y \
     jq
 msg_ok "Installed dependencies"
 
-# Use uv 0.7.19 to match RomM Docker image
 UV_VERSION="0.7.19" PYTHON_VERSION="3.13" setup_uv
 NODE_VERSION="22" NODE_MODULE="serve" setup_nodejs
 setup_mariadb
@@ -77,7 +76,7 @@ sed -i '6a #include <unistd.h>' \
 $STD make HAVE_CHD=1 -f ./Makefile.RAHasher
 cp ./bin64/RAHasher /usr/bin/RAHasher
 chmod +x /usr/bin/RAHasher
-cd /tmp  # Exit directory before deleting it
+cd /tmp
 rm -rf /tmp/RALibretro
 msg_ok "Built RAHasher"
 
@@ -124,19 +123,9 @@ msg_ok "Created environment file"
 msg_info "Installing backend"
 cd /opt/romm
 
-# DEBUG: DNS diagnostics before uv sync
-echo "========== DNS DEBUG =========="
-echo "resolv.conf:"
-cat /etc/resolv.conf
-echo ""
-echo "Testing DNS resolution:"
-echo -n "github.com: "
-nslookup github.com 2>&1 | grep -E "(Address|NXDOMAIN|timed out|can't resolve)" | head -2
-echo ""
-echo -n "Ping github.com: "
-ping -c 2 -W 3 github.com 2>&1 | grep -E "(bytes from|100% packet loss|unknown host)" | head -1
-echo "================================"
-
+# Limit concurrent downloads to avoid DNS resolution failures in LXC containers
+# See: https://github.com/astral-sh/uv/issues/12054
+export UV_CONCURRENT_DOWNLOADS=1
 $STD uv sync --all-extras
 cd /opt/romm/backend
 $STD uv run alembic upgrade head
