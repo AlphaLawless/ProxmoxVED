@@ -62,6 +62,67 @@ mkdir -p /opt/romm \
     /var/lib/romm/library/bios
 msg_ok "Created directories"
 
+msg_info "Creating configuration file"
+cat >/var/lib/romm/config/config.yml <<'CONFIGEOF'
+# RomM Configuration File
+# Documentation: https://docs.romm.app/latest/Getting-Started/Configuration-File/
+# Only uncomment the lines you want to use/modify
+
+# exclude:
+#   platforms:
+#     - excluded_folder_a
+#   roms:
+#     single_file:
+#       extensions:
+#         - xml
+#         - txt
+#       names:
+#         - '._*'
+#         - '*.nfo'
+#     multi_file:
+#       names:
+#         - downloaded_media
+#         - media
+
+# system:
+#   platforms:
+#     gc: ngc
+#     ps1: psx
+
+# The folder name where your roms are located (relative to library path)
+# filesystem:
+#   roms_folder: 'roms'
+
+# scan:
+#   priority:
+#     metadata:
+#       - "igdb"
+#       - "moby"
+#       - "ss"
+#       - "ra"
+#     artwork:
+#       - "igdb"
+#       - "moby"
+#       - "ss"
+#     region:
+#       - "us"
+#       - "eu"
+#       - "jp"
+#     language:
+#       - "en"
+#   media:
+#     - box2d
+#     - box3d
+#     - screenshot
+#     - manual
+
+# emulatorjs:
+#   debug: false
+#   cache_limit: null
+CONFIGEOF
+chmod 644 /var/lib/romm/config/config.yml
+msg_ok "Created configuration file"
+
 msg_info "Building RAHasher (RetroAchievements)"
 RAHASHER_VERSION="1.8.1"
 cd /tmp
@@ -89,6 +150,7 @@ AUTH_SECRET_KEY=$(openssl rand -hex 32)
 
 cat >/opt/romm/.env <<EOF
 ROMM_BASE_PATH=/var/lib/romm
+ROMM_CONFIG_PATH=/var/lib/romm/config/config.yml
 WEB_CONCURRENCY=4
 
 DB_HOST=127.0.0.1

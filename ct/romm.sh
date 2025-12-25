@@ -32,7 +32,7 @@ function update_script() {
 
     if check_for_gh_release "romm" "rommapp/romm"; then
         msg_info "Stopping ${APP} services"
-        systemctl stop romm-backend romm-frontend romm-worker romm-scheduler romm-watcher
+        systemctl stop romm-backend romm-worker romm-scheduler romm-watcher
         msg_ok "Stopped ${APP} services"
 
         msg_info "Backing up configuration"
@@ -54,14 +54,16 @@ function update_script() {
         $STD npm install
         $STD npm run build
 
-        ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
-        ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
+        # Merge static assets into dist folder
+        cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
 
-        chown -R romm:romm /opt/romm
+        mkdir -p /opt/romm/frontend/dist/assets/romm
+        ln -sfn /var/lib/romm/resources /opt/romm/frontend/dist/assets/romm/resources
+        ln -sfn /var/lib/romm/assets /opt/romm/frontend/dist/assets/romm/assets
         msg_ok "Updated ${APP}"
 
         msg_info "Starting ${APP} services"
-        systemctl start romm-backend romm-frontend romm-worker romm-scheduler romm-watcher
+        systemctl start romm-backend romm-worker romm-scheduler romm-watcher
         msg_ok "Started ${APP} services"
 
         msg_ok "Update Successful"
