@@ -77,6 +77,7 @@ sed -i '6a #include <unistd.h>' \
 $STD make HAVE_CHD=1 -f ./Makefile.RAHasher
 cp ./bin64/RAHasher /usr/bin/RAHasher
 chmod +x /usr/bin/RAHasher
+cd /tmp  # Exit directory before deleting it
 rm -rf /tmp/RALibretro
 msg_ok "Built RAHasher"
 
