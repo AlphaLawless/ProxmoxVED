@@ -44,11 +44,12 @@ $STD apt-get install -y \
     redis-tools \
     p7zip-full \
     tzdata \
-    jq
+    jq \
+    nginx
 msg_ok "Installed dependencies"
 
 UV_VERSION="0.7.19" PYTHON_VERSION="3.13" setup_uv
-NODE_VERSION="22" NODE_MODULE="serve" setup_nodejs
+NODE_VERSION="22" setup_nodejs
 setup_mariadb
 MARIADB_DB_NAME="romm" MARIADB_DB_USER="romm" setup_mariadb_db
 
@@ -137,6 +138,62 @@ ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
 ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
 msg_ok "Installed frontend"
 
+msg_info "Configuring nginx"
+cat >/etc/nginx/sites-available/romm <<'EOF'
+upstream romm_backend {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 0;
+
+    # Frontend static files
+    location / {
+        root /opt/romm/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /ws/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # OpenAPI docs
+    location /openapi.json {
+        proxy_pass http://romm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/romm /etc/nginx/sites-enabled/romm
+$STD nginx -t
+systemctl restart nginx
+systemctl enable -q nginx
+msg_ok "Configured nginx"
+
 msg_info "Creating services"
 cat >/etc/systemd/system/romm-backend.service <<EOF
 [Unit]
@@ -150,22 +207,6 @@ WorkingDirectory=/opt/romm/backend
 EnvironmentFile=/opt/romm/.env
 Environment="PYTHONPATH=/opt/romm"
 ExecStart=/opt/romm/.venv/bin/python main.py
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat >/etc/systemd/system/romm-frontend.service <<EOF
-[Unit]
-Description=RomM Frontend
-After=network.target romm-backend.service
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/romm/frontend
-ExecStart=$(which serve) -s dist -l 8080
 Restart=on-failure
 RestartSec=5
 
@@ -233,7 +274,7 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable -q --now romm-backend romm-frontend romm-worker romm-scheduler romm-watcher
+systemctl enable -q --now romm-backend romm-worker romm-scheduler romm-watcher
 msg_ok "Created services"
 
 motd_ssh
