@@ -66,6 +66,42 @@ msg_ok "Created romm user and directories"
 msg_info "Building RAHasher (RetroAchievements)"
 RAHASHER_VERSION="1.8.1"
 
+# ------------------------------------------------------------------------------
+# ensure_network_ready()
+#
+# Ensures network is fully ready for git operations and downloads
+# Waits for DNS resolution and connectivity to specific hosts
+# Arguments: $1 - host to test (default: github.com)
+# ------------------------------------------------------------------------------
+ensure_network_ready() {
+    local target_host="${1:-github.com}"
+    local max_attempts=12
+    local attempt=0
+    local wait_time=5
+
+    msg_info "Ensuring network connectivity to ${target_host}"
+
+    while [ $attempt -lt $max_attempts ]; do
+        # Test DNS resolution
+        if getent hosts "$target_host" &>/dev/null; then
+            # Test actual connectivity
+            if ping -c 1 -W 2 "$target_host" &>/dev/null || curl -s --connect-timeout 5 "https://${target_host}" &>/dev/null; then
+                msg_ok "Network ready - ${target_host} is reachable"
+                return 0
+            fi
+        fi
+
+        attempt=$((attempt + 1))
+        if [ $attempt -lt $max_attempts ]; then
+            msg_info "Network not ready yet, waiting... (attempt $attempt/$max_attempts)"
+            sleep $wait_time
+        fi
+    done
+
+    msg_error "Failed to establish network connectivity to ${target_host} after $max_attempts attempts"
+    return 1
+}
+
 # Ensure network is ready before cloning from GitHub
 ensure_network_ready "github.com"
 
