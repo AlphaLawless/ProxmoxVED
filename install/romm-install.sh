@@ -133,9 +133,13 @@ msg_info "Installing frontend"
 cd /opt/romm/frontend
 $STD npm install
 $STD npm run build
-mkdir -p /opt/romm/frontend/assets/romm
-ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
-ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
+
+# Merge static assets into dist folder
+cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+mkdir -p /opt/romm/frontend/dist/assets/romm
+ln -sfn /var/lib/romm/resources /opt/romm/frontend/dist/assets/romm/resources
+ln -sfn /var/lib/romm/assets /opt/romm/frontend/dist/assets/romm/assets
 msg_ok "Installed frontend"
 
 msg_info "Configuring nginx"
