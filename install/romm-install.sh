@@ -136,6 +136,7 @@ msg_info "Installing frontend"
 cd /opt/romm/frontend
 $STD npm install
 $STD npm run build
+mkdir -p /opt/romm/frontend/assets/romm
 ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
 ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
 chown -R romm:romm /opt/romm
