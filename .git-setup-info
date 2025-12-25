@@ -9,15 +9,15 @@
 git remote -v
 
 # If you don't have 'upstream' configured, add it:
-git remote add upstream https://github.com/community-scripts/ProxmoxVED.git
+git remote add upstream https://github.com/AlphaLawless/ProxmoxVED.git
 
 # Verify both remotes exist:
 git remote -v
 # Should show:
 # origin     https://github.com/YOUR_USERNAME/ProxmoxVED.git (fetch)
 # origin     https://github.com/YOUR_USERNAME/ProxmoxVED.git (push)
-# upstream   https://github.com/community-scripts/ProxmoxVED.git (fetch)
-# upstream   https://github.com/community-scripts/ProxmoxVED.git (push)
+# upstream   https://github.com/AlphaLawless/ProxmoxVED.git (fetch)
+# upstream   https://github.com/AlphaLawless/ProxmoxVED.git (push)
 ```
 
 ### Configure Git User (if not done globally)

@@ -4,7 +4,7 @@
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 
-source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/api.func)
+source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/api.func)
 
 function header_info {
     clear

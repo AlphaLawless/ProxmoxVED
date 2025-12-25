@@ -5,9 +5,9 @@
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/xperimental/nextcloud-exporter
 
-source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/core.func)
-source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/tools.func)
-source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/error_handler.func)
+source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/core.func)
+source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/tools.func)
+source <(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/error_handler.func)
 
 # Enable error handling
 set -Eeuo pipefail
@@ -139,7 +139,7 @@ EOF
   cat <<'UPDATEEOF' >/usr/local/bin/update_nextcloud-exporter
 #!/usr/bin/env bash
 # nextcloud-exporter Update Script
-type=update bash -c "$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/tools/addon/nextcloud-exporter.sh)"
+type=update bash -c "$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/tools/addon/nextcloud-exporter.sh)"
 UPDATEEOF
   chmod +x /usr/local/bin/update_nextcloud-exporter
   msg_ok "Created update script (/usr/local/bin/update_nextcloud-exporter)"

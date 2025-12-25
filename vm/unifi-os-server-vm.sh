@@ -4,9 +4,9 @@
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 
-source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/api.func)
+source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/api.func)
 # Load Cloud-Init library for VM configuration
-source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/cloud-init.func) 2>/dev/null || true
+source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/cloud-init.func) 2>/dev/null || true
 
 function header_info() {
   clear

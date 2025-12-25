@@ -52,7 +52,7 @@ source <(curl -s https://raw.githubusercontent.com/[USER]/[REPO]/refs/heads/[BRA
 Final script:
 
 ```bash
-source <(curl -s https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/main/misc/build.func)
+source <(curl -s https://raw.githubusercontent.com/AlphaLawless/ProxmoxVED/refs/heads/add-romM/misc/build.func)
 ```
 
 > [!CAUTION]

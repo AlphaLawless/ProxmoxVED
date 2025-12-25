@@ -4,17 +4,21 @@
 # ProxmoxVED Fork Setup Script
 #
 # Automatically configures documentation and scripts for your fork
-# Detects your GitHub username and repository from git config
-# Updates all hardcoded links to point to your fork
+# Detects your GitHub username, repository, and current branch from git config
+# Updates all hardcoded links to point to your fork and current branch
 #
 # Usage:
-#   ./setup-fork.sh                    # Auto-detect from git config
+#   ./setup-fork.sh                    # Auto-detect from git config (recommended)
 #   ./setup-fork.sh YOUR_USERNAME      # Specify username
 #   ./setup-fork.sh YOUR_USERNAME REPO_NAME  # Specify both
 #
 # Examples:
-#   ./setup-fork.sh john               # Uses john/ProxmoxVED
-#   ./setup-fork.sh john my-fork       # Uses john/my-fork
+#   ./setup-fork.sh                    # Auto-detects user/repo/branch
+#   ./setup-fork.sh john               # Uses john/ProxmoxVED with current branch
+#   ./setup-fork.sh john my-fork       # Uses john/my-fork with current branch
+#
+# Note: This script will update URLs to use refs/heads/BRANCH_NAME format
+#       for direct testing from your development branch
 ################################################################################
 
 set -e
@@ -29,6 +33,7 @@ NC='\033[0m' # No Color
 # Default values
 REPO_NAME="ProxmoxVED"
 USERNAME=""
+BRANCH_NAME=""
 AUTO_DETECT=true
 
 ################################################################################
@@ -94,6 +99,21 @@ detect_repo_name() {
   fi
 }
 
+# Detect current branch name
+detect_branch_name() {
+  local branch
+
+  if ! branch=$(git branch --show-current 2>/dev/null); then
+    return 1
+  fi
+
+  if [[ -z "$branch" ]]; then
+    return 1
+  fi
+
+  echo "$branch"
+}
+
 # Ask user for confirmation
 confirm() {
   local prompt="$1"
@@ -105,13 +125,27 @@ confirm() {
 
 # Update links in files
 update_links() {
-  local old_repo="community-scripts"
-  local old_name="ProxmoxVED"
   local new_owner="$1"
   local new_repo="$2"
+  local new_branch="$3"
   local files_updated=0
 
   print_info "Scanning for hardcoded links..."
+
+  # Detect current repo in files (could be community-scripts or already changed)
+  local current_owner="community-scripts"
+  local sample_file=$(find . -type f -name "*.sh" -not -path "./.git/*" | head -1)
+
+  if [[ -f "$sample_file" ]]; then
+    # Try to detect current owner from existing URLs
+    if grep -q "raw.githubusercontent.com/[^/]*/ProxmoxVED" "$sample_file" 2>/dev/null; then
+      current_owner=$(grep -oP 'raw\.githubusercontent\.com/\K[^/]*(?=/ProxmoxVED)' "$sample_file" 2>/dev/null | head -1)
+      current_owner=${current_owner:-community-scripts}
+    fi
+  fi
+
+  print_info "Detected current owner: $current_owner"
+  print_info "Will update to: $new_owner"
 
   # Update ALL shell scripts and markdown files that contain the repo URL
   # This includes ct/, install/, misc/, vm/, tools/, docs/
@@ -121,13 +155,14 @@ update_links() {
   # Find all .sh files and update them
   while IFS= read -r -d '' file; do
     if [[ -f "$file" ]]; then
-      # Count occurrences of the old repo URL
-      local count=$(grep -c "community-scripts/ProxmoxVED" "$file" 2>/dev/null || echo 0)
+      # Count occurrences of ProxmoxVED URLs
+      local count=$(grep -c "ProxmoxVED" "$file" 2>/dev/null || echo 0)
 
-      if [[ $count -gt 0 ]]; then
-        # Replace all variations of the URL
-        sed -i "s|github.com/$old_repo/$old_name|github.com/$new_owner/$new_repo|g" "$file"
-        sed -i "s|raw.githubusercontent.com/$old_repo/$old_name|raw.githubusercontent.com/$new_owner/$new_repo|g" "$file"
+      if [[ "$count" -gt 0 ]]; then
+        # Replace all variations of the URL with branch support
+        sed -i "s|github.com/$current_owner/ProxmoxVED|github.com/$new_owner/$new_repo|g" "$file"
+        sed -i "s|raw.githubusercontent.com/$current_owner/ProxmoxVED/main|raw.githubusercontent.com/$new_owner/$new_repo/refs/heads/$new_branch|g" "$file"
+        sed -i "s|raw.githubusercontent.com/$current_owner/ProxmoxVED/refs/heads/[^/]*|raw.githubusercontent.com/$new_owner/$new_repo/refs/heads/$new_branch|g" "$file"
 
         ((files_updated++))
         print_success "Updated $file ($count links)"
@@ -138,11 +173,12 @@ update_links() {
   # Also update markdown docs
   while IFS= read -r -d '' file; do
     if [[ -f "$file" ]]; then
-      local count=$(grep -c "community-scripts/ProxmoxVED" "$file" 2>/dev/null || echo 0)
+      local count=$(grep -c "ProxmoxVED" "$file" 2>/dev/null || echo 0)
 
-      if [[ $count -gt 0 ]]; then
-        sed -i "s|github.com/$old_repo/$old_name|github.com/$new_owner/$new_repo|g" "$file"
-        sed -i "s|raw.githubusercontent.com/$old_repo/$old_name|raw.githubusercontent.com/$new_owner/$new_repo|g" "$file"
+      if [[ "$count" -gt 0 ]]; then
+        sed -i "s|github.com/$current_owner/ProxmoxVED|github.com/$new_owner/$new_repo|g" "$file"
+        sed -i "s|raw.githubusercontent.com/$current_owner/ProxmoxVED/main|raw.githubusercontent.com/$new_owner/$new_repo/refs/heads/$new_branch|g" "$file"
+        sed -i "s|raw.githubusercontent.com/$current_owner/ProxmoxVED/refs/heads/[^/]*|raw.githubusercontent.com/$new_owner/$new_repo/refs/heads/$new_branch|g" "$file"
 
         ((files_updated++))
         print_success "Updated $file ($count links)"
@@ -153,7 +189,12 @@ update_links() {
   echo ""
   echo "Total files updated: $files_updated"
 
-  return $files_updated
+  # Return success if any files were updated
+  if [[ $files_updated -gt 0 ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Create user git config setup info
@@ -259,6 +300,27 @@ else
       print_success "Using default repo name: ProxmoxVED"
     fi
   fi
+
+  # Auto-detect current branch
+  if branch_name=$(detect_branch_name); then
+    BRANCH_NAME="$branch_name"
+    print_success "Detected current branch: $BRANCH_NAME"
+
+    # Warn if on main branch
+    if [[ "$BRANCH_NAME" == "main" ]]; then
+      print_warning "You are on the 'main' branch!"
+      print_warning "It's recommended to work on a feature branch."
+      echo ""
+      if ! confirm "Continue anyway?"; then
+        print_info "Please create a feature branch first:"
+        echo "  git switch -c your-feature-branch"
+        exit 0
+      fi
+    fi
+  else
+    print_error "Could not detect current branch"
+    exit 1
+  fi
 fi
 
 # Validate inputs
@@ -272,9 +334,19 @@ if [[ -z "$REPO_NAME" ]]; then
   exit 1
 fi
 
+if [[ -z "$BRANCH_NAME" ]]; then
+  print_error "Branch name cannot be empty"
+  exit 1
+fi
+
 # Show what we'll do
 echo -e "${BLUE}Configuration Summary:${NC}"
+echo "  GitHub User: ${GREEN}$USERNAME${NC}"
+echo "  Repository: ${GREEN}$REPO_NAME${NC}"
+echo "  Branch: ${GREEN}$BRANCH_NAME${NC}"
+echo ""
 echo "  Repository URL: https://github.com/$USERNAME/$REPO_NAME"
+echo "  Raw URL: https://raw.githubusercontent.com/$USERNAME/$REPO_NAME/refs/heads/$BRANCH_NAME"
 echo "  Directories to scan: ct/, install/, misc/, vm/, tools/, docs/"
 echo ""
 
@@ -287,9 +359,8 @@ fi
 echo ""
 
 # Update all links
-if update_links "$USERNAME" "$REPO_NAME"; then
-  links_changed=$?
-  print_success "Updated $links_changed files"
+if update_links "$USERNAME" "$REPO_NAME" "$BRANCH_NAME"; then
+  print_success "Links updated successfully"
 else
   print_warning "No links needed updating or some files not found"
 fi
@@ -306,14 +377,17 @@ echo ""
 
 print_success "All documentation links updated to point to your fork"
 print_info "Your fork: https://github.com/$USERNAME/$REPO_NAME"
+print_info "Current branch: $BRANCH_NAME"
+print_info "Raw URL: https://raw.githubusercontent.com/$USERNAME/$REPO_NAME/refs/heads/$BRANCH_NAME"
 print_info "Upstream: https://github.com/AlphaLawless/ProxmoxVED"
 echo ""
 
 echo -e "${BLUE}Next Steps:${NC}"
 echo "  1. Review the changes: git diff"
-echo "  2. Check .git-setup-info for recommended git workflow"
-echo "  3. Start developing: git checkout -b feature/my-app"
-echo "  4. Read: docs/CONTRIBUTION_GUIDE.md"
+echo "  2. Test your scripts pointing to your branch"
+echo "  3. Check .git-setup-info for recommended git workflow"
+echo "  4. Before creating a PR, restore URLs to upstream"
+echo "  5. Read: docs/CONTRIBUTION_GUIDE.md"
 echo ""
 
 print_success "Happy contributing! 🚀"
