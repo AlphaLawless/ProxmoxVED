@@ -47,7 +47,8 @@ $STD apt-get install -y \
     jq
 msg_ok "Installed dependencies"
 
-PYTHON_VERSION="3.13" setup_uv
+# Use uv 0.7.19 to match RomM Docker image
+UV_VERSION="0.7.19" PYTHON_VERSION="3.13" setup_uv
 NODE_VERSION="22" NODE_MODULE="serve" setup_nodejs
 setup_mariadb
 MARIADB_DB_NAME="romm" MARIADB_DB_USER="romm" setup_mariadb_db
