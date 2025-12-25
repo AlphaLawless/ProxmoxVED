@@ -121,6 +121,20 @@ msg_ok "Created environment file"
 
 msg_info "Installing backend"
 cd /opt/romm
+
+# DEBUG: DNS diagnostics before uv sync
+echo "========== DNS DEBUG =========="
+echo "resolv.conf:"
+cat /etc/resolv.conf
+echo ""
+echo "Testing DNS resolution:"
+echo -n "github.com: "
+nslookup github.com 2>&1 | grep -E "(Address|NXDOMAIN|timed out|can't resolve)" | head -2
+echo ""
+echo -n "Ping github.com: "
+ping -c 2 -W 3 github.com 2>&1 | grep -E "(bytes from|100% packet loss|unknown host)" | head -1
+echo "================================"
+
 $STD uv sync --all-extras
 cd /opt/romm/backend
 $STD uv run alembic upgrade head
