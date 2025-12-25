@@ -31548,3 +31548,843 @@ ss -tlnp | grep 5000
 # Testar backend diretamente
 curl -I http://127.0.0.1:5000/api/
 ```
+
+## User
+
+Por algum motivo a logo não está sendo carregada:
+
+src="/assets/logos/romm_logo_xbox_one_square.svg"
+
+Ele dá como se não pudesse ler os assets
+
+## Assistant
+
+O problema é que o nginx está servindo `/opt/romm/frontend/dist/` mas os assets estão em outro lugar. Deixa eu verificar a estrutura:
+
+```bash
+# Verificar onde estão os assets
+ls -la /opt/romm/frontend/dist/assets/
+ls -la /opt/romm/frontend/assets/
+find /opt/romm -name "romm_logo_xbox*" 2>/dev/null
+```
+
+E também:
+
+```bash
+# Ver o erro no nginx
+tail -20 /var/log/nginx/error.log
+```
+
+Isso vai mostrar onde o nginx está tentando buscar o arquivo e onde ele realmente está.
+
+## User
+
+A logo está em /opt/romm/frontend/assets/logos/romm_logo_xbox_one_square.svg. Mas como estou usando o nginx e até mesmo quando estava usando o outro os assets não carregaram dessa logo.
+
+## Assistant
+
+Entendi! O problema é que o build do frontend (`npm run build`) coloca os arquivos em `/opt/romm/frontend/dist/`, mas os assets estáticos como logos estão em `/opt/romm/frontend/assets/` (fora do dist).
+
+Preciso adicionar uma location no nginx para servir os assets:
+
+**Tool Call: Edit `/home/alpha/Projects/study/ProxmoxVED/install/romm-install.sh`**
+Status: Canceled
+
+Diff: /home/alpha/Projects/study/ProxmoxVED/install/romm-install.sh
+```
+#!/usr/bin/env bash
+
+# Copyright (c) 2021-2025 community-scripts ORG
+# Author: DevelopmentCats
+# Co-author: AlphaLawless
+# License: MIT | https://github.com/AlphaLawless/ProxmoxVED/raw/main/LICENSE
+# Source: https://romm.app
+# Updated: 25/12/2025
+
+source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+color
+verb_ip6
+catch_errors
+setting_up_container
+network_check
+update_os
+
+msg_info "Installing dependencies"
+$STD apt-get install -y \
+    acl \
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    git \
+    curl \
+    libssl-dev \
+    libffi-dev \
+    libmagic-dev \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    libmariadb3 \
+    libmariadb-dev \
+    libpq-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    zlib1g-dev \
+    liblzma-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    redis-server \
+    redis-tools \
+    p7zip-full \
+    tzdata \
+    jq \
+    nginx
+msg_ok "Installed dependencies"
+
+UV_VERSION="0.7.19" PYTHON_VERSION="3.13" setup_uv
+NODE_VERSION="22" setup_nodejs
+setup_mariadb
+MARIADB_DB_NAME="romm" MARIADB_DB_USER="romm" setup_mariadb_db
+
+msg_info "Creating directories"
+mkdir -p /opt/romm \
+    /var/lib/romm/config \
+    /var/lib/romm/resources \
+    /var/lib/romm/assets/{saves,states,screenshots} \
+    /var/lib/romm/library/roms \
+    /var/lib/romm/library/bios
+msg_ok "Created directories"
+
+msg_info "Building RAHasher (RetroAchievements)"
+RAHASHER_VERSION="1.8.1"
+cd /tmp
+git clone --recursive --branch "$RAHASHER_VERSION" --depth 1 https://github.com/RetroAchievements/RALibretro.git
+cd RALibretro
+sed -i '22a #include <ctime>' ./src/Util.h
+sed -i '6a #include <unistd.h>' \
+    ./src/libchdr/deps/zlib-1.3.1/gzlib.c \
+    ./src/libchdr/deps/zlib-1.3.1/gzread.c \
+    ./src/libchdr/deps/zlib-1.3.1/gzwrite.c
+$STD make HAVE_CHD=1 -f ./Makefile.RAHasher
+cp ./bin64/RAHasher /usr/bin/RAHasher
+chmod +x /usr/bin/RAHasher
+cd /tmp
+rm -rf /tmp/RALibretro
+msg_ok "Built RAHasher"
+
+fetch_and_deploy_gh_release "romm" "rommapp/romm"
+
+msg_info "Creating environment file"
+sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
+systemctl restart redis-server
+systemctl enable -q --now redis-server
+AUTH_SECRET_KEY=$(openssl rand -hex 32)
+
+cat >/opt/romm/.env <<EOF
+ROMM_BASE_PATH=/var/lib/romm
+WEB_CONCURRENCY=4
+
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=$MARIADB_DB_NAME
+DB_USER=$MARIADB_DB_USER
+DB_PASSWD=$MARIADB_DB_PASS
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+
+ROMM_AUTH_SECRET_KEY=$AUTH_SECRET_KEY
+DISABLE_DOWNLOAD_ENDPOINT_AUTH=false
+DISABLE_CSRF_PROTECTION=false
+
+ENABLE_RESCAN_ON_FILESYSTEM_CHANGE=true
+RESCAN_ON_FILESYSTEM_CHANGE_DELAY=5
+
+ENABLE_SCHEDULED_RESCAN=true
+SCHEDULED_RESCAN_CRON=0 3 * * *
+ENABLE_SCHEDULED_UPDATE_SWITCH_TITLEDB=true
+SCHEDULED_UPDATE_SWITCH_TITLEDB_CRON=0 4 * * *
+
+LOGLEVEL=INFO
+EOF
+
+chmod 600 /opt/romm/.env
+msg_ok "Created environment file"
+
+msg_info "Installing backend"
+cd /opt/romm
+
+# Limit concurrent downloads to avoid DNS resolution failures in LXC containers
+# See: https://github.com/astral-sh/uv/issues/12054
+export UV_CONCURRENT_DOWNLOADS=1
+$STD uv sync --all-extras
+cd /opt/romm/backend
+$STD uv run alembic upgrade head
+msg_ok "Installed backend"
+
+msg_info "Installing frontend"
+cd /opt/romm/frontend
+$STD npm install
+$STD npm run build
+mkdir -p /opt/romm/frontend/assets/romm
+ln -sfn /var/lib/romm/resources /opt/romm/frontend/assets/romm/resources
+ln -sfn /var/lib/romm/assets /opt/romm/frontend/assets/romm/assets
+msg_ok "Installed frontend"
+
+msg_info "Configuring nginx"
+cat >/etc/nginx/sites-available/romm <<'EOF'
+upstream romm_backend {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 0;
+
+    # Frontend static files
+    location / {
+        root /opt/romm/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Static assets (logos, images, etc.)
+    location /assets/ {
+        alias /opt/romm/frontend/assets/;
+        try_files $uri =404;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /ws/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # OpenAPI docs
+    location /openapi.json {
+        proxy_pass http://romm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/romm /etc/nginx/sites-enabled/romm
+$STD nginx -t
+systemctl restart nginx
+systemctl enable -q nginx
+msg_ok "Configured nginx"
+
+msg_info "Creating services"
+cat >/etc/systemd/system/romm-backend.service <<EOF
+[Unit]
+Description=RomM Backend
+After=network.target mariadb.service redis-server.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm"
+ExecStart=/opt/romm/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-worker.service <<EOF
+[Unit]
+Description=RomM RQ Worker
+After=network.target mariadb.service redis-server.service romm-backend.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+ExecStart=/opt/romm/.venv/bin/rq worker --path /opt/romm/backend --url redis://127.0.0.1:6379/0 high default low
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-scheduler.service <<EOF
+[Unit]
+Description=RomM RQ Scheduler
+After=network.target mariadb.service redis-server.service romm-backend.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+Environment="RQ_REDIS_HOST=127.0.0.1"
+Environment="RQ_REDIS_PORT=6379"
+ExecStart=/opt/romm/.venv/bin/rqscheduler --path /opt/romm/backend
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-watcher.service <<EOF
+[Unit]
+Description=RomM Filesystem Watcher
+After=network.target romm-backend.service
+Requires=romm-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+ExecStart=/opt/romm/.venv/bin/watchfiles --target-type command '/opt/romm/.venv/bin/python watcher.py' /var/lib/romm/library
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable -q --now romm-backend romm-worker romm-scheduler romm-watcher
+msg_ok "Created services"
+
+motd_ssh
+customize
+cleanup_lxc
+
+```
+
+
+## User
+
+2025/12/25 06:26:53 [alert] 9845#9845: sched_setaffinity() failed (22: Invalid argument)
+2025/12/25 06:26:53 [alert] 9844#9844: sched_setaffinity() failed (22: Invalid argument)
+
+## Assistant
+
+Esse erro do `sched_setaffinity` é normal em containers LXC, não afeta o funcionamento.
+
+Para corrigir o problema dos assets, adicione no nginx:
+
+```bash
+pct enter 110
+
+# Editar config do nginx
+cat >/etc/nginx/sites-available/romm <<'EOF'
+upstream romm_backend {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 0;
+
+    # Frontend static files
+    location / {
+        root /opt/romm/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Static assets (logos, images, etc.)
+    location /assets/ {
+        alias /opt/romm/frontend/assets/;
+        try_files $uri =404;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /ws/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # OpenAPI docs
+    location /openapi.json {
+        proxy_pass http://romm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+nginx -t && systemctl reload nginx
+```
+
+Adicionei a location `/assets/` que aponta para `/opt/romm/frontend/assets/`.
+
+## User
+
+Depois que eu adicionei o assets não funcionou bem. Tem uma alternativa melhor?
+
+## Assistant
+
+Sim, uma alternativa mais simples é copiar os assets para dentro do `dist/` após o build. Assim tudo fica no mesmo lugar:
+
+```bash
+# No container
+cp -r /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+# Recarregar nginx
+systemctl reload nginx
+```
+
+Se funcionar, eu atualizo o script para fazer isso automaticamente após o `npm run build`.
+
+## User
+
+O complicado é que já tem uma pasta chamada assets lá dentro do dist. O que poderia fazer overwrite
+
+## Assistant
+
+Então vamos fazer um merge dos assets. O `cp` com as flags certas faz isso sem sobrescrever arquivos existentes ou fazendo merge:
+
+```bash
+# Merge dos assets (copia apenas o que não existe no destino)
+cp -rn /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+# Ou se quiser sobrescrever (o do frontend/assets tem prioridade)
+cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+systemctl reload nginx
+```
+
+A flag `-n` (no-clobber) não sobrescreve arquivos existentes. A flag `-f` força sobrescrita.
+
+Qual prefere testar? O `-rf` provavelmente é mais seguro pois os assets originais (logos) devem ter prioridade.
+
+## User (checkpoint)
+
+tem como fazer essa copia para mim após o build?
+
+**Tool Call: Edit `/home/alpha/Projects/study/ProxmoxVED/install/romm-install.sh`**
+Status: Completed
+
+Diff: /home/alpha/Projects/study/ProxmoxVED/install/romm-install.sh
+```
+#!/usr/bin/env bash
+
+# Copyright (c) 2021-2025 community-scripts ORG
+# Author: DevelopmentCats
+# Co-author: AlphaLawless
+# License: MIT | https://github.com/AlphaLawless/ProxmoxVED/raw/main/LICENSE
+# Source: https://romm.app
+# Updated: 25/12/2025
+
+source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+color
+verb_ip6
+catch_errors
+setting_up_container
+network_check
+update_os
+
+msg_info "Installing dependencies"
+$STD apt-get install -y \
+    acl \
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    git \
+    curl \
+    libssl-dev \
+    libffi-dev \
+    libmagic-dev \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    libmariadb3 \
+    libmariadb-dev \
+    libpq-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    zlib1g-dev \
+    liblzma-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    redis-server \
+    redis-tools \
+    p7zip-full \
+    tzdata \
+    jq \
+    nginx
+msg_ok "Installed dependencies"
+
+UV_VERSION="0.7.19" PYTHON_VERSION="3.13" setup_uv
+NODE_VERSION="22" setup_nodejs
+setup_mariadb
+MARIADB_DB_NAME="romm" MARIADB_DB_USER="romm" setup_mariadb_db
+
+msg_info "Creating directories"
+mkdir -p /opt/romm \
+    /var/lib/romm/config \
+    /var/lib/romm/resources \
+    /var/lib/romm/assets/{saves,states,screenshots} \
+    /var/lib/romm/library/roms \
+    /var/lib/romm/library/bios
+msg_ok "Created directories"
+
+msg_info "Building RAHasher (RetroAchievements)"
+RAHASHER_VERSION="1.8.1"
+cd /tmp
+git clone --recursive --branch "$RAHASHER_VERSION" --depth 1 https://github.com/RetroAchievements/RALibretro.git
+cd RALibretro
+sed -i '22a #include <ctime>' ./src/Util.h
+sed -i '6a #include <unistd.h>' \
+    ./src/libchdr/deps/zlib-1.3.1/gzlib.c \
+    ./src/libchdr/deps/zlib-1.3.1/gzread.c \
+    ./src/libchdr/deps/zlib-1.3.1/gzwrite.c
+$STD make HAVE_CHD=1 -f ./Makefile.RAHasher
+cp ./bin64/RAHasher /usr/bin/RAHasher
+chmod +x /usr/bin/RAHasher
+cd /tmp
+rm -rf /tmp/RALibretro
+msg_ok "Built RAHasher"
+
+fetch_and_deploy_gh_release "romm" "rommapp/romm"
+
+msg_info "Creating environment file"
+sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
+systemctl restart redis-server
+systemctl enable -q --now redis-server
+AUTH_SECRET_KEY=$(openssl rand -hex 32)
+
+cat >/opt/romm/.env <<EOF
+ROMM_BASE_PATH=/var/lib/romm
+WEB_CONCURRENCY=4
+
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=$MARIADB_DB_NAME
+DB_USER=$MARIADB_DB_USER
+DB_PASSWD=$MARIADB_DB_PASS
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+
+ROMM_AUTH_SECRET_KEY=$AUTH_SECRET_KEY
+DISABLE_DOWNLOAD_ENDPOINT_AUTH=false
+DISABLE_CSRF_PROTECTION=false
+
+ENABLE_RESCAN_ON_FILESYSTEM_CHANGE=true
+RESCAN_ON_FILESYSTEM_CHANGE_DELAY=5
+
+ENABLE_SCHEDULED_RESCAN=true
+SCHEDULED_RESCAN_CRON=0 3 * * *
+ENABLE_SCHEDULED_UPDATE_SWITCH_TITLEDB=true
+SCHEDULED_UPDATE_SWITCH_TITLEDB_CRON=0 4 * * *
+
+LOGLEVEL=INFO
+EOF
+
+chmod 600 /opt/romm/.env
+msg_ok "Created environment file"
+
+msg_info "Installing backend"
+cd /opt/romm
+
+# Limit concurrent downloads to avoid DNS resolution failures in LXC containers
+# See: https://github.com/astral-sh/uv/issues/12054
+export UV_CONCURRENT_DOWNLOADS=1
+$STD uv sync --all-extras
+cd /opt/romm/backend
+$STD uv run alembic upgrade head
+msg_ok "Installed backend"
+
+msg_info "Installing frontend"
+cd /opt/romm/frontend
+$STD npm install
+$STD npm run build
+
+# Merge static assets into dist folder
+cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+# Create symlinks for user resources
+mkdir -p /opt/romm/frontend/dist/assets/romm
+ln -sfn /var/lib/romm/resources /opt/romm/frontend/dist/assets/romm/resources
+ln -sfn /var/lib/romm/assets /opt/romm/frontend/dist/assets/romm/assets
+msg_ok "Installed frontend"
+
+msg_info "Configuring nginx"
+cat >/etc/nginx/sites-available/romm <<'EOF'
+upstream romm_backend {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 0;
+
+    # Frontend static files
+    location / {
+        root /opt/romm/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /ws/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # OpenAPI docs
+    location /openapi.json {
+        proxy_pass http://romm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/romm /etc/nginx/sites-enabled/romm
+$STD nginx -t
+systemctl restart nginx
+systemctl enable -q nginx
+msg_ok "Configured nginx"
+
+msg_info "Creating services"
+cat >/etc/systemd/system/romm-backend.service <<EOF
+[Unit]
+Description=RomM Backend
+After=network.target mariadb.service redis-server.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm"
+ExecStart=/opt/romm/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-worker.service <<EOF
+[Unit]
+Description=RomM RQ Worker
+After=network.target mariadb.service redis-server.service romm-backend.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+ExecStart=/opt/romm/.venv/bin/rq worker --path /opt/romm/backend --url redis://127.0.0.1:6379/0 high default low
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-scheduler.service <<EOF
+[Unit]
+Description=RomM RQ Scheduler
+After=network.target mariadb.service redis-server.service romm-backend.service
+Requires=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+Environment="RQ_REDIS_HOST=127.0.0.1"
+Environment="RQ_REDIS_PORT=6379"
+ExecStart=/opt/romm/.venv/bin/rqscheduler --path /opt/romm/backend
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/romm-watcher.service <<EOF
+[Unit]
+Description=RomM Filesystem Watcher
+After=network.target romm-backend.service
+Requires=romm-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/romm/backend
+EnvironmentFile=/opt/romm/.env
+Environment="PYTHONPATH=/opt/romm/backend"
+ExecStart=/opt/romm/.venv/bin/watchfiles --target-type command '/opt/romm/.venv/bin/python watcher.py' /var/lib/romm/library
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable -q --now romm-backend romm-worker romm-scheduler romm-watcher
+msg_ok "Created services"
+
+motd_ssh
+customize
+cleanup_lxc
+
+```
+
+
+## Assistant
+
+Pronto! Atualizei o script:
+
+1. Após o `npm run build`, copia os assets para `dist/assets/`
+2. Os symlinks agora apontam para dentro do `dist/` também
+
+Também preciso remover a location extra do `/assets/` do nginx que não funcionou:
+
+**Tool Call: Read /home/alpha/Projects/study/ProxmoxVED/install/romm-install.sh (146 - 195)**
+Status: Completed
+
+```
+
+msg_info "Configuring nginx"
+cat >/etc/nginx/sites-available/romm <<'EOF'
+upstream romm_backend {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 0;
+
+    # Frontend static files
+    location / {
+        root /opt/romm/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /ws/ {
+        proxy_pass http://romm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # OpenAPI docs
+    location /openapi.json {
+        proxy_pass http://romm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+
+
+
+<file-read-info>Read lines 145-51. </file-read-info>
+```
+
+## Assistant
+
+O nginx no script já está correto (sem a location `/assets/` extra). O script está pronto.
+
+Para o container atual, execute:
+
+```bash
+pct enter 110
+
+# Copiar assets para dist
+cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
+
+# Recriar symlinks no lugar certo
+mkdir -p /opt/romm/frontend/dist/assets/romm
+ln -sfn /var/lib/romm/resources /opt/romm/frontend/dist/assets/romm/resources
+ln -sfn /var/lib/romm/assets /opt/romm/frontend/dist/assets/romm/assets
+
+# Reload nginx
+systemctl reload nginx
+```
+
+Depois testa no navegador (Ctrl+F5 para limpar cache).
