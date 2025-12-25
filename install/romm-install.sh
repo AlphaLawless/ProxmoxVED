@@ -65,8 +65,32 @@ msg_ok "Created romm user and directories"
 
 msg_info "Building RAHasher (RetroAchievements)"
 RAHASHER_VERSION="1.8.1"
+
+# Ensure network is ready before cloning from GitHub
+ensure_network_ready "github.com"
+
 cd /tmp
-git clone --recursive --branch "$RAHASHER_VERSION" --depth 1 https://github.com/RetroAchievements/RALibretro.git
+
+# Clone with retry logic (3 attempts)
+CLONE_SUCCESS=false
+for attempt in {1..3}; do
+    if git clone --recursive --branch "$RAHASHER_VERSION" --depth 1 https://github.com/RetroAchievements/RALibretro.git; then
+        CLONE_SUCCESS=true
+        break
+    else
+        if [ $attempt -lt 3 ]; then
+            msg_info "Clone attempt $attempt failed, retrying in 5 seconds..."
+            rm -rf RALibretro 2>/dev/null || true
+            sleep 5
+        fi
+    fi
+done
+
+if [ "$CLONE_SUCCESS" = false ]; then
+    msg_error "Failed to clone RALibretro repository after 3 attempts"
+    exit 1
+fi
+
 cd RALibretro
 sed -i '22a #include <ctime>' ./src/Util.h
 sed -i '6a #include <unistd.h>' \
