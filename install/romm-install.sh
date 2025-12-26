@@ -196,9 +196,6 @@ cd /opt/romm/frontend
 $STD npm install
 $STD npm run build
 
-# Merge static assets into dist folder
-cp -rf /opt/romm/frontend/assets/* /opt/romm/frontend/dist/assets/
-
 mkdir -p /opt/romm/frontend/dist/assets/romm
 ln -sfn /var/lib/romm/resources /opt/romm/frontend/dist/assets/romm/resources
 ln -sfn /var/lib/romm/assets /opt/romm/frontend/dist/assets/romm/assets
@@ -210,45 +207,59 @@ upstream romm_backend {
     server 127.0.0.1:5000;
 }
 
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
 server {
     listen 80;
     server_name _;
+    root /opt/romm/frontend/dist;
     client_max_body_size 0;
 
-    # Frontend static files
+    # Frontend SPA
     location / {
-        root /opt/romm/frontend/dist;
         try_files $uri $uri/ /index.html;
     }
 
+    # EmulatorJS player - requires COOP/COEP headers for SharedArrayBuffer
+    location ~ ^/rom/.*/ejs$ {
+        add_header Cross-Origin-Embedder-Policy "require-corp";
+        add_header Cross-Origin-Opener-Policy "same-origin";
+        try_files $uri /index.html;
+    }
+
     # Backend API
-    location /api/ {
+    location /api {
         proxy_pass http://romm_backend;
-        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_request_buffering off;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # WebSocket
-    location /ws/ {
+    # WebSocket and Netplay
+    location ~ ^/(ws|netplay) {
         proxy_pass http://romm_backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
     }
 
     # OpenAPI docs
-    location /openapi.json {
+    location = /openapi.json {
         proxy_pass http://romm_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Internal library file serving
+    location /library/ {
+        internal;
+        alias /var/lib/romm/library/;
     }
 }
 EOF
