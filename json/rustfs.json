@@ -1,0 +1,44 @@
+{
+    "name": "RustFS",
+    "slug": "rustfs",
+    "categories": [
+        11
+    ],
+    "date_created": "2026-03-21",
+    "type": "ct",
+    "updateable": true,
+    "privileged": false,
+    "interface_port": 9001,
+    "documentation": "https://rustfs.com/docs/",
+    "website": "https://rustfs.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rustfs.webp",
+    "config_path": "/opt/rustfs/.env",
+    "description": "RustFS is a high-performance distributed object storage system written in Rust, compatible with the S3 API. Supports erasure coding, multi-tenant management, and observability.",
+    "install_methods": [
+        {
+            "type": "default",
+            "script": "ct/rustfs.sh",
+            "resources": {
+                "cpu": 2,
+                "ram": 2048,
+                "hdd": 10,
+                "os": "Debian",
+                "version": "13"
+            }
+        }
+    ],
+    "default_credentials": {
+        "username": null,
+        "password": null
+    },
+    "notes": [
+        {
+            "text": "S3 credentials are randomly generated during installation and stored in /opt/rustfs/.env",
+            "type": "info"
+        },
+        {
+            "text": "RustFS is currently in alpha stage. Not recommended for production use.",
+            "type": "warning"
+        }
+    ]
+}
