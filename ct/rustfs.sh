@@ -29,7 +29,7 @@ function update_script() {
     exit
   fi
 
-  RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | grep -m1 '"tag_name"' | cut -d'"' -f4)
+  RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | jq -r '.[0].tag_name')
   CURRENT=$(cat ~/.rustfs 2>/dev/null || echo "")
 
   if [[ -n "$RELEASE" && "$RELEASE" != "$CURRENT" ]]; then

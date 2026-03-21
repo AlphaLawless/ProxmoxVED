@@ -13,7 +13,8 @@ setting_up_container
 network_check
 update_os
 
-RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | grep -m1 '"tag_name"' | cut -d'"' -f4)
+ensure_dependencies jq
+RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | jq -r '.[0].tag_name')
 fetch_and_deploy_gh_release "rustfs" "rustfs/rustfs" "prebuild" "${RELEASE}" "/usr/bin" "rustfs-linux-x86_64-gnu-latest.zip"
 chmod +x /usr/bin/rustfs
 
