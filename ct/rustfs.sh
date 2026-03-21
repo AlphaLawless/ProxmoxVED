@@ -29,18 +29,23 @@ function update_script() {
     exit
   fi
 
-  if check_for_gh_release "rustfs" "rustfs/rustfs"; then
+  RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | grep -m1 '"tag_name"' | cut -d'"' -f4)
+  CURRENT=$(cat ~/.rustfs 2>/dev/null || echo "")
+
+  if [[ -n "$RELEASE" && "$RELEASE" != "$CURRENT" ]]; then
     msg_info "Stopping Service"
     systemctl stop rustfs
     msg_ok "Stopped Service"
 
-    fetch_and_deploy_gh_release "rustfs" "rustfs/rustfs" "prebuild" "latest" "/usr/bin" "rustfs-linux-x86_64-gnu-latest.zip"
+    fetch_and_deploy_gh_release "rustfs" "rustfs/rustfs" "prebuild" "${RELEASE}" "/usr/bin" "rustfs-linux-x86_64-gnu-latest.zip"
     chmod +x /usr/bin/rustfs
 
     msg_info "Starting Service"
     systemctl start rustfs
     msg_ok "Started Service"
-    msg_ok "Updated successfully!"
+    msg_ok "Updated successfully to ${RELEASE}!"
+  else
+    msg_ok "No update required. ${APP} is already at ${CURRENT}."
   fi
   exit
 }

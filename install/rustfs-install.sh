@@ -13,7 +13,8 @@ setting_up_container
 network_check
 update_os
 
-fetch_and_deploy_gh_release "rustfs" "rustfs/rustfs" "prebuild" "latest" "/usr/bin" "rustfs-linux-x86_64-gnu-latest.zip"
+RELEASE=$(curl -fsSL "https://api.github.com/repos/rustfs/rustfs/releases" | grep -m1 '"tag_name"' | cut -d'"' -f4)
+fetch_and_deploy_gh_release "rustfs" "rustfs/rustfs" "prebuild" "${RELEASE}" "/usr/bin" "rustfs-linux-x86_64-gnu-latest.zip"
 chmod +x /usr/bin/rustfs
 
 msg_info "Configuring RustFS"
